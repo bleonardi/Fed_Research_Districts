@@ -1,0 +1,20 @@
+project:
+  type: website
+  output-dir: docs
+
+website:
+  title: "Fed Research Districts"
+
+format:
+  html:
+    theme: flatly
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    linestretch: 1.6
+    fig-width: 9
+    fig-height: 6
+    code-fold: true
+    highlight-style: github
+    df-print: kable
+    page-layout: article

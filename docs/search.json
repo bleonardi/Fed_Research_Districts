@@ -1,0 +1,128 @@
+[
+  {
+    "objectID": "fed_research_districts.html",
+    "href": "fed_research_districts.html",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "",
+    "text": "Code\nlibrary(tidyverse)\nlibrary(ggrepel)\n\ntopic_shares    &lt;- read_csv(\"data/fed_topic_shares.csv\")\nindustry_shares &lt;- read_csv(\"data/fed_industry_shares.csv\")\npair_cors       &lt;- read_csv(\"data/pair_correlations.csv\")\ncross_cor       &lt;- read_csv(\"data/cross_correlation_matrix.csv\")\nalignment       &lt;- read_csv(\"data/fed_alignment_scores.csv\")\njoined          &lt;- read_csv(\"data/joined_wide.csv\")\n\nsectors &lt;- c(\"Housing\",\"Energy\",\"Agriculture\",\"Technology\",\"Finance\",\"Trade\",\"Manufacturing\",\"Labor\")\n\ntheme_set(\n  theme_minimal(base_size = 13) +\n  theme(\n    plot.title    = element_text(face = \"bold\"),\n    plot.subtitle = element_text(color = \"grey40\"),\n    panel.grid.minor = element_blank()\n  )\n)"
+  },
+  {
+    "objectID": "fed_research_districts.html#overview",
+    "href": "fed_research_districts.html#overview",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "1 Overview",
+    "text": "1 Overview\nThis analysis asks whether Federal Reserve Banks’ research output mirrors the economic specialization of their geographic districts. Each Fed publishes working papers through its research department; if researchers respond to their local economy, we’d expect — for example — the Dallas Fed to publish more energy research, or the New York Fed to publish more finance research.\nData sources:\n\nWorking papers (2010–2024): OpenAlex API, ~18,300 papers across all 12 Feds\nIndustry employment: BLS QCEW 2022 annual county-level data, aggregated to Fed districts using official district-county crosswalks\nTopic model: keyATM with 10 seeded topics (Agriculture, Energy, Finance, Housing, Labor, Manufacturing, MonetaryPolicy, Technology, Trade, Inequality) plus 3 unsupervised residual topics"
+  },
+  {
+    "objectID": "fed_research_districts.html#topic-mix-by-fed",
+    "href": "fed_research_districts.html#topic-mix-by-fed",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "2 Topic mix by Fed",
+    "text": "2 Topic mix by Fed\nHow does each Fed’s research portfolio break down by topic?\n\n\nCode\ntopic_long &lt;- topic_shares |&gt;\n  select(fed, all_of(sectors)) |&gt;\n  pivot_longer(-fed, names_to = \"topic\", values_to = \"share\")\n\n# Normalize within topic (z-score) so differences are visible across topics\ntopic_long &lt;- topic_long |&gt;\n  group_by(topic) |&gt;\n  mutate(z = (share - mean(share)) / sd(share)) |&gt;\n  ungroup()\n\nggplot(topic_long, aes(x = topic, y = fct_reorder(fed, share, .fun = sum), fill = z)) +\n  geom_tile(color = \"white\", linewidth = 0.4) +\n  geom_text(aes(label = scales::percent(share, accuracy = 0.1)), size = 2.8, color = \"black\") +\n  scale_fill_gradient2(\n    low = \"#3B82F6\", mid = \"white\", high = \"#EF4444\",\n    midpoint = 0, name = \"Z-score\\n(within topic)\"\n  ) +\n  scale_x_discrete(guide = guide_axis(angle = 35)) +\n  labs(\n    title    = \"Research topic mix by Federal Reserve Bank\",\n    subtitle = \"Cell values = share of papers; color = deviation from cross-Fed mean within topic\",\n    x = NULL, y = NULL\n  )"
+  },
+  {
+    "objectID": "fed_research_districts.html#industry-mix-by-fed-district",
+    "href": "fed_research_districts.html#industry-mix-by-fed-district",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "3 Industry mix by Fed district",
+    "text": "3 Industry mix by Fed district\nHow does employment break down across the same broad sectors?\n\n\nCode\nind_long &lt;- industry_shares |&gt;\n  filter(sector %in% sectors)\n\nind_long &lt;- ind_long |&gt;\n  group_by(sector) |&gt;\n  mutate(z = (emp_share - mean(emp_share)) / sd(emp_share)) |&gt;\n  ungroup()\n\nggplot(ind_long, aes(x = sector, y = fct_reorder(fed, emp_share, .fun = sum), fill = z)) +\n  geom_tile(color = \"white\", linewidth = 0.4) +\n  geom_text(aes(label = scales::percent(emp_share, accuracy = 0.1)), size = 2.8, color = \"black\") +\n  scale_fill_gradient2(\n    low = \"#3B82F6\", mid = \"white\", high = \"#EF4444\",\n    midpoint = 0, name = \"Z-score\\n(within sector)\"\n  ) +\n  scale_x_discrete(guide = guide_axis(angle = 35)) +\n  labs(\n    title    = \"Industry employment mix by Federal Reserve district\",\n    subtitle = \"Cell values = share of district employment; color = deviation from cross-Fed mean\",\n    x = NULL, y = NULL\n  )"
+  },
+  {
+    "objectID": "fed_research_districts.html#matched-pair-correlations",
+    "href": "fed_research_districts.html#matched-pair-correlations",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "4 Matched-pair correlations",
+    "text": "4 Matched-pair correlations\nFor each topic-industry pair, how strongly does the cross-Fed ranking of research emphasis correlate with the cross-Fed ranking of industry employment?\n\n\nCode\npair_cors |&gt;\n  mutate(\n    sig   = p &lt; 0.1,\n    label = paste0(\"r = \", round(r, 2), if_else(sig, \"*\", \"\"))\n  ) |&gt;\n  ggplot(aes(x = r, y = fct_reorder(sector, r), fill = r &gt; 0)) +\n  geom_col(width = 0.6) +\n  geom_text(aes(label = label, hjust = if_else(r &gt; 0, -0.1, 1.1)), size = 3.5) +\n  geom_vline(xintercept = 0, linewidth = 0.5) +\n  scale_fill_manual(values = c(\"#3B82F6\",\"#EF4444\"), guide = \"none\") +\n  scale_x_continuous(limits = c(-0.65, 0.65)) +\n  labs(\n    title    = \"Cross-Fed correlation: research topic share vs industry employment share\",\n    subtitle = \"n = 12 Feds; * p &lt; 0.1\",\n    x = \"Pearson r\", y = NULL\n  )\n\n\n\n\n\n\n\n\n\nKey findings:\n\nFinance has the strongest positive match (r = 0.45): Feds in finance-heavy districts (New York, Philadelphia, Richmond) publish proportionally more finance research.\nTrade is also positive (r = 0.38): St. Louis and Minneapolis — major logistics/trade corridors — publish more trade research.\nHousing is negative (r = -0.48): The Feds with the most housing-sector employment are not the ones publishing the most housing research. Philadelphia publishes the most housing research despite being a mid-tier construction market.\nEnergy is near zero (r = 0.16): Dallas leads on energy employment but San Francisco leads on “energy” research topics — likely because San Francisco’s energy keywords capture climate/grid research rather than oil & gas."
+  },
+  {
+    "objectID": "fed_research_districts.html#scatter-plots-topic-vs-industry-for-key-pairs",
+    "href": "fed_research_districts.html#scatter-plots-topic-vs-industry-for-key-pairs",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "5 Scatter plots: topic vs industry for key pairs",
+    "text": "5 Scatter plots: topic vs industry for key pairs\n\n\nCode\nplot_scatter &lt;- function(sector_name, color = \"#3B82F6\") {\n  ggplot(joined, aes(\n    x = .data[[paste0(sector_name, \"_ind\")]],\n    y = .data[[paste0(sector_name, \"_topic\")]]\n  )) +\n    geom_smooth(method = \"lm\", se = TRUE, color = \"grey70\", fill = \"grey90\", linewidth = 0.7) +\n    geom_point(size = 3, color = color, alpha = 0.85) +\n    geom_text_repel(aes(label = fed), size = 3, max.overlaps = 20) +\n    scale_x_continuous(labels = scales::percent_format(accuracy = 0.1)) +\n    scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +\n    labs(\n      title = sector_name,\n      x = \"Industry employment share\",\n      y = \"Research topic share\"\n    )\n}\n\nlibrary(patchwork)\n(plot_scatter(\"Finance\", \"#3B82F6\") | plot_scatter(\"Energy\",  \"#F59E0B\")) /\n(plot_scatter(\"Housing\", \"#EF4444\") | plot_scatter(\"Trade\",   \"#10B981\"))"
+  },
+  {
+    "objectID": "fed_research_districts.html#full-cross-correlation-matrix",
+    "href": "fed_research_districts.html#full-cross-correlation-matrix",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "6 Full cross-correlation matrix",
+    "text": "6 Full cross-correlation matrix\nDo topics correlate with unexpected industries? The off-diagonal cells are often as interesting as the diagonal.\n\n\nCode\ncross_cor |&gt;\n  ggplot(aes(x = sector, y = fct_rev(topic), fill = r)) +\n  geom_tile(color = \"white\", linewidth = 0.4) +\n  geom_text(aes(label = round(r, 2)), size = 3) +\n  scale_fill_gradient2(\n    low = \"#3B82F6\", mid = \"white\", high = \"#EF4444\",\n    midpoint = 0, limits = c(-1, 1), name = \"r\"\n  ) +\n  scale_x_discrete(guide = guide_axis(angle = 35)) +\n  labs(\n    title    = \"Cross-correlation: every research topic vs every industry\",\n    subtitle = \"Diagonal = matched pairs; off-diagonal = unexpected correlations\",\n    x = \"Industry employment\", y = \"Research topic\"\n  ) +\n  # highlight diagonal\n  geom_tile(\n    data = cross_cor |&gt; filter(topic == sector),\n    color = \"black\", fill = NA, linewidth = 1\n  )\n\n\n\n\n\n\n\n\n\nNotable off-diagonal findings:\n\nEnergy research ~ Agriculture employment (r = 0.92): The Feds in agricultural districts (Minneapolis, Kansas City) publish the most “energy-tagged” research. This likely reflects rural energy topics — ethanol, farm energy costs, rural utilities — rather than oil & gas.\nFinance research ~ Labor employment (r = 0.40): Feds in large labor markets publish more finance research, possibly reflecting broader economic size.\nHousing research ~ Finance employment (r = 0.37): Finance-heavy districts study housing markets (mortgages, housing finance)."
+  },
+  {
+    "objectID": "fed_research_districts.html#per-fed-alignment-scores",
+    "href": "fed_research_districts.html#per-fed-alignment-scores",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "7 Per-Fed alignment scores",
+    "text": "7 Per-Fed alignment scores\nHow correlated is each Fed’s overall topic distribution with its overall industry mix?\n\n\nCode\nalignment |&gt;\n  mutate(\n    direction = if_else(alignment_score &gt; 0, \"Aligned\", \"Misaligned\"),\n    label     = round(alignment_score, 2)\n  ) |&gt;\n  ggplot(aes(\n    x = alignment_score,\n    y = fct_reorder(fed, alignment_score),\n    fill = direction\n  )) +\n  geom_col(width = 0.6) +\n  geom_text(aes(label = label, hjust = if_else(alignment_score &gt; 0, -0.1, 1.1)), size = 3.5) +\n  geom_vline(xintercept = 0, linewidth = 0.5) +\n  scale_fill_manual(values = c(\"Aligned\" = \"#10B981\", \"Misaligned\" = \"#EF4444\"), guide = \"none\") +\n  scale_x_continuous(limits = c(-0.35, 0.6)) +\n  labs(\n    title    = \"Per-Fed alignment: research topic mix vs district industry mix\",\n    subtitle = \"Score = Pearson r between each Fed's topic vector and its industry employment vector\",\n    x = \"Alignment score (r)\", y = NULL\n  )\n\n\n\n\n\n\n\n\n\nInterpretation:\n\nMidwest Feds (St. Louis, Kansas City, Minneapolis) are most aligned — their research portfolios broadly match their districts’ manufacturing, agriculture, and trade emphasis.\nBoston, Philadelphia, San Francisco are most misaligned — their research diverges from local industry. Philadelphia over-indexes on housing and health research; San Francisco over-indexes on monetary policy relative to its tech-heavy economy; Boston research is broadly national in scope.\nNew York is near zero — it’s the most nationally-focused Fed, so neither aligned nor misaligned with any specific sector."
+  },
+  {
+    "objectID": "fed_research_districts.html#caveats",
+    "href": "fed_research_districts.html#caveats",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "8 Caveats",
+    "text": "8 Caveats\n\nAbstract coverage: Only 59% of papers had abstracts in OpenAlex. Papers without abstracts were classified on title alone, which is noisier.\n“Energy” topic contamination: San Francisco’s high Energy topic score likely reflects climate/electricity research, not fossil fuels. A finer keyword set (separating fossil-fuel energy from clean energy) would improve this.\nState-level district assignment: Split states (Missouri, West Virginia, etc.) were assigned at the county level using published Fed district maps, but a few edge counties may be misassigned.\nNo causal claim: Correlation between research topics and local industries could run in either direction, or both could reflect third factors (e.g., Fed economists’ research interests attracted by local data availability)."
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "",
+    "text": "Code\nlibrary(tidyverse)\nlibrary(ggrepel)\n\ntopic_shares    &lt;- read_csv(\"data/fed_topic_shares.csv\")\nindustry_shares &lt;- read_csv(\"data/fed_industry_shares.csv\")\npair_cors       &lt;- read_csv(\"data/pair_correlations.csv\")\ncross_cor       &lt;- read_csv(\"data/cross_correlation_matrix.csv\")\nalignment       &lt;- read_csv(\"data/fed_alignment_scores.csv\")\njoined          &lt;- read_csv(\"data/joined_wide.csv\")\n\nsectors &lt;- c(\"Housing\",\"Energy\",\"Agriculture\",\"Technology\",\"Finance\",\"Trade\",\"Manufacturing\",\"Labor\")\n\ntheme_set(\n  theme_minimal(base_size = 13) +\n  theme(\n    plot.title    = element_text(face = \"bold\"),\n    plot.subtitle = element_text(color = \"grey40\"),\n    panel.grid.minor = element_blank()\n  )\n)"
+  },
+  {
+    "objectID": "index.html#overview",
+    "href": "index.html#overview",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "1 Overview",
+    "text": "1 Overview\nThis analysis asks whether Federal Reserve Banks’ research output mirrors the economic specialization of their geographic districts. Each Fed publishes working papers through its research department; if researchers respond to their local economy, we’d expect — for example — the Dallas Fed to publish more energy research, or the New York Fed to publish more finance research.\nData sources:\n\nWorking papers (2010–2024): OpenAlex API, ~18,300 papers across all 12 Feds\nIndustry employment: BLS QCEW 2022 annual county-level data, aggregated to Fed districts using official district-county crosswalks\nTopic model: keyATM with 10 seeded topics (Agriculture, Energy, Finance, Housing, Labor, Manufacturing, MonetaryPolicy, Technology, Trade, Inequality) plus 3 unsupervised residual topics"
+  },
+  {
+    "objectID": "index.html#topic-mix-by-fed",
+    "href": "index.html#topic-mix-by-fed",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "2 Topic mix by Fed",
+    "text": "2 Topic mix by Fed\nHow does each Fed’s research portfolio break down by topic?\n\n\nCode\ntopic_long &lt;- topic_shares |&gt;\n  select(fed, all_of(sectors)) |&gt;\n  pivot_longer(-fed, names_to = \"topic\", values_to = \"share\")\n\n# Normalize within topic (z-score) so differences are visible across topics\ntopic_long &lt;- topic_long |&gt;\n  group_by(topic) |&gt;\n  mutate(z = (share - mean(share)) / sd(share)) |&gt;\n  ungroup()\n\nggplot(topic_long, aes(x = topic, y = fct_reorder(fed, share, .fun = sum), fill = z)) +\n  geom_tile(color = \"white\", linewidth = 0.4) +\n  geom_text(aes(label = scales::percent(share, accuracy = 0.1)), size = 2.8, color = \"black\") +\n  scale_fill_gradient2(\n    low = \"#3B82F6\", mid = \"white\", high = \"#EF4444\",\n    midpoint = 0, name = \"Z-score\\n(within topic)\"\n  ) +\n  scale_x_discrete(guide = guide_axis(angle = 35)) +\n  labs(\n    title    = \"Research topic mix by Federal Reserve Bank\",\n    subtitle = \"Cell values = share of papers; color = deviation from cross-Fed mean within topic\",\n    x = NULL, y = NULL\n  )"
+  },
+  {
+    "objectID": "index.html#industry-mix-by-fed-district",
+    "href": "index.html#industry-mix-by-fed-district",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "3 Industry mix by Fed district",
+    "text": "3 Industry mix by Fed district\nHow does employment break down across the same broad sectors?\n\n\nCode\nind_long &lt;- industry_shares |&gt;\n  filter(sector %in% sectors)\n\nind_long &lt;- ind_long |&gt;\n  group_by(sector) |&gt;\n  mutate(z = (emp_share - mean(emp_share)) / sd(emp_share)) |&gt;\n  ungroup()\n\nggplot(ind_long, aes(x = sector, y = fct_reorder(fed, emp_share, .fun = sum), fill = z)) +\n  geom_tile(color = \"white\", linewidth = 0.4) +\n  geom_text(aes(label = scales::percent(emp_share, accuracy = 0.1)), size = 2.8, color = \"black\") +\n  scale_fill_gradient2(\n    low = \"#3B82F6\", mid = \"white\", high = \"#EF4444\",\n    midpoint = 0, name = \"Z-score\\n(within sector)\"\n  ) +\n  scale_x_discrete(guide = guide_axis(angle = 35)) +\n  labs(\n    title    = \"Industry employment mix by Federal Reserve district\",\n    subtitle = \"Cell values = share of district employment; color = deviation from cross-Fed mean\",\n    x = NULL, y = NULL\n  )"
+  },
+  {
+    "objectID": "index.html#matched-pair-correlations",
+    "href": "index.html#matched-pair-correlations",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "4 Matched-pair correlations",
+    "text": "4 Matched-pair correlations\nFor each topic-industry pair, how strongly does the cross-Fed ranking of research emphasis correlate with the cross-Fed ranking of industry employment?\n\n\nCode\npair_cors |&gt;\n  mutate(\n    sig   = p &lt; 0.1,\n    label = paste0(\"r = \", round(r, 2), if_else(sig, \"*\", \"\"))\n  ) |&gt;\n  ggplot(aes(x = r, y = fct_reorder(sector, r), fill = r &gt; 0)) +\n  geom_col(width = 0.6) +\n  geom_text(aes(label = label, hjust = if_else(r &gt; 0, -0.1, 1.1)), size = 3.5) +\n  geom_vline(xintercept = 0, linewidth = 0.5) +\n  scale_fill_manual(values = c(\"#3B82F6\",\"#EF4444\"), guide = \"none\") +\n  scale_x_continuous(limits = c(-0.65, 0.65)) +\n  labs(\n    title    = \"Cross-Fed correlation: research topic share vs industry employment share\",\n    subtitle = \"n = 12 Feds; * p &lt; 0.1\",\n    x = \"Pearson r\", y = NULL\n  )\n\n\n\n\n\n\n\n\n\nKey findings:\n\nFinance has the strongest positive match (r = 0.45): Feds in finance-heavy districts (New York, Philadelphia, Richmond) publish proportionally more finance research.\nTrade is also positive (r = 0.38): St. Louis and Minneapolis — major logistics/trade corridors — publish more trade research.\nHousing is negative (r = -0.48): The Feds with the most housing-sector employment are not the ones publishing the most housing research. Philadelphia publishes the most housing research despite being a mid-tier construction market.\nEnergy is near zero (r = 0.16): Dallas leads on energy employment but San Francisco leads on “energy” research topics — likely because San Francisco’s energy keywords capture climate/grid research rather than oil & gas."
+  },
+  {
+    "objectID": "index.html#scatter-plots-topic-vs-industry-for-key-pairs",
+    "href": "index.html#scatter-plots-topic-vs-industry-for-key-pairs",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "5 Scatter plots: topic vs industry for key pairs",
+    "text": "5 Scatter plots: topic vs industry for key pairs\n\n\nCode\nplot_scatter &lt;- function(sector_name, color = \"#3B82F6\") {\n  ggplot(joined, aes(\n    x = .data[[paste0(sector_name, \"_ind\")]],\n    y = .data[[paste0(sector_name, \"_topic\")]]\n  )) +\n    geom_smooth(method = \"lm\", se = TRUE, color = \"grey70\", fill = \"grey90\", linewidth = 0.7) +\n    geom_point(size = 3, color = color, alpha = 0.85) +\n    geom_text_repel(aes(label = fed), size = 3, max.overlaps = 20) +\n    scale_x_continuous(labels = scales::percent_format(accuracy = 0.1)) +\n    scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +\n    labs(\n      title = sector_name,\n      x = \"Industry employment share\",\n      y = \"Research topic share\"\n    )\n}\n\nlibrary(patchwork)\n(plot_scatter(\"Finance\", \"#3B82F6\") | plot_scatter(\"Energy\",  \"#F59E0B\")) /\n(plot_scatter(\"Housing\", \"#EF4444\") | plot_scatter(\"Trade\",   \"#10B981\"))"
+  },
+  {
+    "objectID": "index.html#full-cross-correlation-matrix",
+    "href": "index.html#full-cross-correlation-matrix",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "6 Full cross-correlation matrix",
+    "text": "6 Full cross-correlation matrix\nDo topics correlate with unexpected industries? The off-diagonal cells are often as interesting as the diagonal.\n\n\nCode\ncross_cor |&gt;\n  ggplot(aes(x = sector, y = fct_rev(topic), fill = r)) +\n  geom_tile(color = \"white\", linewidth = 0.4) +\n  geom_text(aes(label = round(r, 2)), size = 3) +\n  scale_fill_gradient2(\n    low = \"#3B82F6\", mid = \"white\", high = \"#EF4444\",\n    midpoint = 0, limits = c(-1, 1), name = \"r\"\n  ) +\n  scale_x_discrete(guide = guide_axis(angle = 35)) +\n  labs(\n    title    = \"Cross-correlation: every research topic vs every industry\",\n    subtitle = \"Diagonal = matched pairs; off-diagonal = unexpected correlations\",\n    x = \"Industry employment\", y = \"Research topic\"\n  ) +\n  # highlight diagonal\n  geom_tile(\n    data = cross_cor |&gt; filter(topic == sector),\n    color = \"black\", fill = NA, linewidth = 1\n  )\n\n\n\n\n\n\n\n\n\nNotable off-diagonal findings:\n\nEnergy research ~ Agriculture employment (r = 0.92): The Feds in agricultural districts (Minneapolis, Kansas City) publish the most “energy-tagged” research. This likely reflects rural energy topics — ethanol, farm energy costs, rural utilities — rather than oil & gas.\nFinance research ~ Labor employment (r = 0.40): Feds in large labor markets publish more finance research, possibly reflecting broader economic size.\nHousing research ~ Finance employment (r = 0.37): Finance-heavy districts study housing markets (mortgages, housing finance)."
+  },
+  {
+    "objectID": "index.html#per-fed-alignment-scores",
+    "href": "index.html#per-fed-alignment-scores",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "7 Per-Fed alignment scores",
+    "text": "7 Per-Fed alignment scores\nHow correlated is each Fed’s overall topic distribution with its overall industry mix?\n\n\nCode\nalignment |&gt;\n  mutate(\n    direction = if_else(alignment_score &gt; 0, \"Aligned\", \"Misaligned\"),\n    label     = round(alignment_score, 2)\n  ) |&gt;\n  ggplot(aes(\n    x = alignment_score,\n    y = fct_reorder(fed, alignment_score),\n    fill = direction\n  )) +\n  geom_col(width = 0.6) +\n  geom_text(aes(label = label, hjust = if_else(alignment_score &gt; 0, -0.1, 1.1)), size = 3.5) +\n  geom_vline(xintercept = 0, linewidth = 0.5) +\n  scale_fill_manual(values = c(\"Aligned\" = \"#10B981\", \"Misaligned\" = \"#EF4444\"), guide = \"none\") +\n  scale_x_continuous(limits = c(-0.35, 0.6)) +\n  labs(\n    title    = \"Per-Fed alignment: research topic mix vs district industry mix\",\n    subtitle = \"Score = Pearson r between each Fed's topic vector and its industry employment vector\",\n    x = \"Alignment score (r)\", y = NULL\n  )\n\n\n\n\n\n\n\n\n\nInterpretation:\n\nMidwest Feds (St. Louis, Kansas City, Minneapolis) are most aligned — their research portfolios broadly match their districts’ manufacturing, agriculture, and trade emphasis.\nBoston, Philadelphia, San Francisco are most misaligned — their research diverges from local industry. Philadelphia over-indexes on housing and health research; San Francisco over-indexes on monetary policy relative to its tech-heavy economy; Boston research is broadly national in scope.\nNew York is near zero — it’s the most nationally-focused Fed, so neither aligned nor misaligned with any specific sector."
+  },
+  {
+    "objectID": "index.html#caveats",
+    "href": "index.html#caveats",
+    "title": "Do Federal Reserve Banks Research What Their Districts Produce?",
+    "section": "8 Caveats",
+    "text": "8 Caveats\n\nAbstract coverage: Only 59% of papers had abstracts in OpenAlex. Papers without abstracts were classified on title alone, which is noisier.\n“Energy” topic contamination: San Francisco’s high Energy topic score likely reflects climate/electricity research, not fossil fuels. A finer keyword set (separating fossil-fuel energy from clean energy) would improve this.\nState-level district assignment: Split states (Missouri, West Virginia, etc.) were assigned at the county level using published Fed district maps, but a few edge counties may be misassigned.\nNo causal claim: Correlation between research topics and local industries could run in either direction, or both could reflect third factors (e.g., Fed economists’ research interests attracted by local data availability)."
+  }
+]
